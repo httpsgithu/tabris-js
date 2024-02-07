@@ -1,11 +1,22 @@
 import NativeObject from './NativeObject';
 import {toValueString} from './Console';
-import CryptoKey, {Algorithm, AlgorithmECDH, AlgorithmHKDF, AlgorithmInternal, _CryptoKey} from './CryptoKey';
+import CryptoKey, {
+  Algorithm,
+  AlgorithmECDH,
+  AlgorithmECDSA,
+  AlgorithmHKDF,
+  AlgorithmInternal,
+  GenerateKeyOptions,
+  _CryptoKey
+} from './CryptoKey';
 import {allowOnlyKeys, allowOnlyValues, getBuffer, getCid, getNativeObject} from './util';
 import checkType from './checkType';
 
 export type TypedArray = Int8Array | Uint8Array | Uint8ClampedArray
   | Int16Array | Uint16Array | Int32Array | Uint32Array;
+
+type SignatureAlgorithm = { name: 'ECDSAinDERFormat', hash: 'SHA-256' };
+export type AuthPromptOptions = { authPromptTitle?: string, authPromptMessage?: string };
 
 export default class Crypto {
 
@@ -75,11 +86,11 @@ class SubtleCrypto {
     allowOnlyValues(format, ['spki', 'pkcs8', 'raw'], 'format');
     checkType(getBuffer(keyData), ArrayBuffer, {name: 'keyData'});
     if (typeof algorithm === 'string') {
-      allowOnlyValues(algorithm, ['ECDH', 'AES-GCM', 'HKDF'], 'algorithm');
+      allowOnlyValues(algorithm, ['AES-GCM', 'HKDF'], 'algorithm');
     } else {
       checkType(algorithm, Object, {name: 'algorithm'});
-      allowOnlyValues(algorithm.name, ['ECDH', 'AES-GCM'], 'algorithm.name');
-      if (algorithm.name === 'ECDH') {
+      allowOnlyValues(algorithm.name, ['ECDH', 'ECDSA', 'AES-GCM'], 'algorithm.name');
+      if (algorithm.name === 'ECDH' || algorithm.name === 'ECDSA') {
         allowOnlyKeys(algorithm, ['name', 'namedCurve']);
         allowOnlyValues(algorithm.namedCurve, ['P-256'], 'algorithm.namedCurve');
       } else {
@@ -103,17 +114,20 @@ class SubtleCrypto {
   async deriveBits(
     algorithm: Algorithm,
     baseKey: CryptoKey,
-    length: number
+    length: number,
+    options: AuthPromptOptions = {}
   ): Promise<ArrayBuffer> {
-    if (arguments.length !== 3) {
-      throw new TypeError(`Expected 3 arguments, got ${arguments.length}`);
+    if (arguments.length < 3) {
+      throw new TypeError(`Expected at least 3 arguments, got ${arguments.length}`);
     }
     checkDeriveAlgorithm(algorithm);
     checkType(baseKey, CryptoKey, {name: 'baseKey'});
     checkType(length, Number, {name: 'length'});
+    checkAuthPromptOptions(options);
     const nativeObject = new _CryptoKey();
     try {
-      await nativeObject.derive(algorithm, baseKey, {length, name: 'AES-GCM'}, true, []);
+      await nativeObject.derive(
+        algorithm, baseKey, {length, name: 'AES-GCM'}, true, [], options.authPromptTitle, options.authPromptMessage);
       return new Promise((onSuccess, onReject) =>
         this._nativeObject.subtleExportKey('raw', nativeObject, onSuccess, onReject)
       );
@@ -127,10 +141,11 @@ class SubtleCrypto {
     baseKey: CryptoKey,
     derivedKeyAlgorithm: {name: string, length: number},
     extractable: boolean,
-    keyUsages: string[]
+    keyUsages: string[],
+    options: AuthPromptOptions = {}
   ): Promise<CryptoKey> {
-    if (arguments.length !== 5) {
-      throw new TypeError(`Expected 5 arguments, got ${arguments.length}`);
+    if (arguments.length < 5) {
+      throw new TypeError(`Expected at least 5 arguments, got ${arguments.length}`);
     }
     checkDeriveAlgorithm(algorithm);
     allowOnlyKeys(derivedKeyAlgorithm, ['name', 'length']);
@@ -139,8 +154,17 @@ class SubtleCrypto {
     checkType(baseKey, CryptoKey, {name: 'baseKey'});
     checkType(extractable, Boolean, {name: 'extractable'});
     checkType(keyUsages, Array, {name: 'keyUsages'});
+    checkAuthPromptOptions(options);
     const nativeObject = new _CryptoKey();
-    await nativeObject.derive(algorithm, baseKey, derivedKeyAlgorithm, extractable, keyUsages);
+    await nativeObject.derive(
+      algorithm,
+      baseKey,
+      derivedKeyAlgorithm,
+      extractable,
+      keyUsages,
+      options.authPromptTitle,
+      options.authPromptMessage
+    );
     return new CryptoKey(nativeObject, {
       algorithm,
       extractable,
@@ -210,26 +234,80 @@ class SubtleCrypto {
   }
 
   async generateKey(
-    algorithm: AlgorithmECDH,
+    algorithm: AlgorithmECDH | AlgorithmECDSA,
     extractable: boolean,
-    keyUsages: string[]
+    keyUsages: string[],
+    options?: GenerateKeyOptions
   ): Promise<{privateKey: CryptoKey, publicKey: CryptoKey}> {
-    if (arguments.length !== 3) {
-      throw new TypeError(`Expected 3 arguments, got ${arguments.length}`);
+    if (arguments.length < 3) {
+      throw new TypeError(`Expected at least 3 arguments, got ${arguments.length}`);
     }
     allowOnlyKeys(algorithm, ['name', 'namedCurve']);
-    allowOnlyValues(algorithm.name, ['ECDH'], 'algorithm.name');
+    allowOnlyValues(algorithm.name, ['ECDH', 'ECDSA'], 'algorithm.name');
     allowOnlyValues(algorithm.namedCurve, ['P-256'], 'algorithm.namedCurve');
     checkType(extractable, Boolean, {name: 'extractable'});
     checkType(keyUsages, Array, {name: 'keyUsages'});
+    if (options != null) {
+      allowOnlyKeys(options, ['usageRequiresAuth']);
+      if ('usageRequiresAuth' in options) {
+        checkType(options.usageRequiresAuth, Boolean, {name: 'options.usageRequiresAuth'});
+      }
+      if (options.usageRequiresAuth && (extractable || !algorithm.name.startsWith('EC'))) {
+        throw new TypeError('options.usageRequiresAuth is only supported for non-extractable EC keys');
+      }
+    }
+    const usageRequiresAuth = options?.usageRequiresAuth;
     const nativeObject = new _CryptoKey();
-    await nativeObject.generate(algorithm, extractable, keyUsages);
+    await nativeObject.generate(algorithm, extractable, keyUsages, usageRequiresAuth);
     const nativePrivate = new _CryptoKey(nativeObject, 'private');
     const nativePublic = new _CryptoKey(nativeObject, 'public');
     return {
       privateKey: new CryptoKey(nativePrivate, {algorithm, extractable}),
       publicKey: new CryptoKey(nativePublic, {algorithm, extractable})
     };
+  }
+
+  async sign(
+    algorithm: SignatureAlgorithm,
+    key: CryptoKey,
+    data: ArrayBuffer | TypedArray,
+    options: AuthPromptOptions = {}
+  ): Promise<ArrayBuffer> {
+    if (arguments.length < 3) {
+      throw new TypeError(`Expected at least 3 arguments, got ${arguments.length}`);
+    }
+    allowOnlyKeys(algorithm, ['name', 'hash']);
+    allowOnlyValues(algorithm.name, ['ECDSAinDERFormat'], 'algorithm.name');
+    allowOnlyValues(algorithm.hash, ['SHA-256'], 'algorithm.hash');
+    checkType(key, CryptoKey, {name: 'key'});
+    checkType(algorithm.name, String, {name: 'algorithm.name'});
+    checkType(algorithm.hash, String, {name: 'algorithm.hash'});
+    checkType(getBuffer(data), ArrayBuffer, {name: 'data'});
+    checkAuthPromptOptions(options);
+    return new Promise((onSuccess, onError) =>
+      this._nativeObject.subtleSign(
+        algorithm, key, data, options.authPromptTitle, options.authPromptMessage, onSuccess, onError)
+    );
+  }
+
+  async verify(
+    algorithm: SignatureAlgorithm,
+    key: CryptoKey,
+    signature: ArrayBuffer | TypedArray,
+    data: ArrayBuffer | TypedArray
+  ): Promise<boolean> {
+    if (arguments.length !== 4) {
+      throw new TypeError(`Expected 4 arguments, got ${arguments.length}`);
+    }
+    allowOnlyKeys(algorithm, ['name', 'hash']);
+    allowOnlyValues(algorithm.name, ['ECDSAinDERFormat'], 'algorithm.name');
+    allowOnlyValues(algorithm.hash, ['SHA-256'], 'algorithm.hash');
+    checkType(key, CryptoKey, {name: 'key'});
+    checkType(getBuffer(signature), ArrayBuffer, {name: 'signature'});
+    checkType(getBuffer(data), ArrayBuffer, {name: 'data'});
+    return new Promise((onSuccess, onReject) =>
+      this._nativeObject.subtleVerify(algorithm, key, signature, data, onSuccess, onReject)
+    );
   }
 
 }
@@ -344,6 +422,53 @@ class NativeCrypto extends NativeObject {
     });
   }
 
+  subtleSign(
+    algorithm: SignatureAlgorithm,
+    key: CryptoKey,
+    data: ArrayBuffer | TypedArray,
+    authPromptTitle: string | undefined,
+    authPromptMessage: string | undefined,
+    onSuccess: (buffer: ArrayBuffer) => any,
+    onError: (ex: Error) => any
+  ): void {
+    this._nativeCall('subtleSign', {
+      algorithm,
+      key: getCid(key),
+      data: getBuffer(data),
+      authPromptTitle,
+      authPromptMessage,
+      onSuccess,
+      onError: (reason: unknown) => onError(new Error(String(reason)))
+    });
+  }
+
+  subtleVerify(
+    algorithm: SignatureAlgorithm,
+    key: CryptoKey,
+    signature: ArrayBuffer | TypedArray,
+    data: ArrayBuffer | TypedArray,
+    onSuccess: (isValid: boolean) => any,
+    onError: (ex: Error) => any
+  ): void {
+    this._nativeCall('subtleVerify', {
+      algorithm,
+      key: getCid(key),
+      signature: getBuffer(signature),
+      data: getBuffer(data),
+      onSuccess,
+      onError: (reason: unknown) => onError(new Error(String(reason)))
+    });
+  }
+
+}
+
+function checkAuthPromptOptions(options: AuthPromptOptions) {
+  if ('authPromptTitle' in options) {
+    checkType(options.authPromptTitle, String, {name: 'options.authPromptTitle'});
+  }
+  if ('authPromptMessage' in options) {
+    checkType(options.authPromptMessage, String, {name: 'options.authPromptMessage'});
+  }
 }
 
 function checkDeriveAlgorithm(algorithm: Algorithm):
