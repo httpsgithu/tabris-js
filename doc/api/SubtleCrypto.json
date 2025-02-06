@@ -84,6 +84,16 @@
           {
             "name": "keyUsages",
             "type": "string[]"
+          },
+          {
+            "name": "options",
+            "optional": true,
+            "type": {
+              "map": {
+                "authPromptTitle": { "type": "string", "optional": true },
+                "authPromptMessage": { "type": "string", "optional": true }
+              }
+            }
           }
         ],
         "returns": {
@@ -193,6 +203,16 @@
           {
             "name": "length",
             "type": "number"
+          },
+          {
+            "name": "options",
+            "optional": true,
+            "type": {
+              "map": {
+                "authPromptTitle": { "type": "string", "optional": true },
+                "authPromptMessage": { "type": "string", "optional": true }
+              }
+            }
           }
         ],
         "returns": {
@@ -287,7 +307,9 @@
               {
                 "map": {
                   "name": {
-                    "type": "'ECDH'"
+                    "type": {
+                      "union": ["'ECDH'", "'ECDSA'"]
+                    }
                   },
                   "namedCurve": {
                     "type": "'P-256'"
@@ -323,14 +345,16 @@
       }
     },
     "generateKey": {
-      "description": "Generates new keys. Currently only supports the Elliptic Curve Diffie-Hellman (ECDH) algorithm to generate key pairs.",
+      "description": "Generates new keys. Currently only supports the Elliptic Curve Diffie-Hellman (ECDH) and Elliptic Curve Digital Signature Algorithm (ECDSA) algorithms to generate key pairs. When `extractable` is set to `true`, the raw key material can be exported using `exportKey`. When `extractable` is set to `false`, for ECDSA and ECDH keys `exportKey` returns an opaque handle to the key in the device's trusted execution environment, and throws for other key formats.",
       "parameters": [
         {
           "name": "algorithm",
           "type": {
             "map": {
               "name": {
-                "type": "'ECDH'"
+                "type": {
+                  "union": ["'ECDH'", "'ECDSA'"]
+                }
               },
               "namedCurve": {
                 "type": "'P-256'"
@@ -345,6 +369,15 @@
         {
           "name": "keyUsages",
           "type": "string[]"
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": {
+            "map": {
+              "usageRequiresAuth": { "type": "boolean", "optional": true }
+            }
+          }
         }
       ],
       "returns": {
@@ -456,7 +489,7 @@
       }
     },
     "exportKey": {
-      "description": "Converts a CryptoKey instances into a portable format. To export a key, the key must have extractable set to true. Supports the spki format or raw bytes.",
+      "description": "Converts `CryptoKey` instances into a portable format. If the key's `extractable` is set to `true`, returns the raw key material in SPKI format or as raw bytes. If the key's `extractable` is set to `false`, for ECDSA and ECDH keys returns an opaque handle to the key in the device's trusted execution environment, and throws for other key formats.",
       "parameters": [
         {
           "name": "format",
@@ -476,6 +509,99 @@
         "interface": "Promise",
         "generics": [
           "ArrayBuffer"
+        ]
+      }
+    },
+    "sign": {
+      "description": "Signs the given data. Currently only supports creating ECDSA signatures in DER format.",
+      "parameters": [
+        {
+          "name": "algorithm",
+          "type": {
+            "map": {
+              "name": {
+                "type": "'ECDSAinDERFormat'"
+              },
+              "hash": {
+                "type": "'SHA-256'"
+              }
+            }
+          }
+        },
+        {
+          "name": "key",
+          "type": "CryptoKey"
+        },
+        {
+          "name": "data",
+          "type": {
+            "union": [
+              "ArrayBuffer",
+              "TypedArray"
+            ]
+          }
+        },
+        {
+          "name": "options",
+          "optional": true,
+          "type": {
+            "map": {
+              "authPromptTitle": { "type": "string", "optional": true },
+              "authPromptMessage": { "type": "string", "optional": true }
+            }
+          }
+        }
+      ],
+      "returns": {
+        "interface": "Promise",
+        "generics": [
+          "ArrayBuffer"
+        ]
+      }
+    },
+    "verify": {
+      "description": "Verifies the given signature against the data. Currently only supports verifying ECDSA signatures in DER format.",
+      "parameters": [
+        {
+          "name": "algorithm",
+          "type": {
+            "map": {
+              "name": {
+                "type": "'ECDSAinDERFormat'"
+              },
+              "hash": {
+                "type": "'SHA-256'"
+              }
+            }
+          }
+        },
+        {
+          "name": "key",
+          "type": "CryptoKey"
+        },
+        {
+          "name": "signature",
+          "type": {
+            "union": [
+              "ArrayBuffer",
+              "TypedArray"
+            ]
+          }
+        },
+        {
+          "name": "data",
+          "type": {
+            "union": [
+              "ArrayBuffer",
+              "TypedArray"
+            ]
+          }
+        }
+      ],
+      "returns": {
+        "interface": "Promise",
+        "generics": [
+          "boolean"
         ]
       }
     }

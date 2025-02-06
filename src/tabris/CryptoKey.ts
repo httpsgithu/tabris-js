@@ -2,7 +2,7 @@ import {TypedArray} from './Crypto';
 import NativeObject from './NativeObject';
 import {getBuffer, getCid, setNativeObject} from './util';
 
-export type AlgorithmInternal = AlgorithmHKDF | AlgorithmECDH | 'HKDF' | 'AES-GCM';
+export type AlgorithmInternal = AlgorithmHKDF | AlgorithmECDH | AlgorithmECDSA | 'HKDF' | 'AES-GCM';
 
 export type Algorithm = AlgorithmInternal | {name: 'AES-GCM'};
 
@@ -18,6 +18,13 @@ export type AlgorithmECDH = {
   namedCurve: 'P-256',
   public?: CryptoKey
 };
+
+export type AlgorithmECDSA = {
+  name: 'ECDSA',
+  namedCurve: 'P-256'
+};
+
+export type GenerateKeyOptions = { usageRequiresAuth?: boolean };
 
 export default class CryptoKey {
 
@@ -74,7 +81,9 @@ export class _CryptoKey extends NativeObject {
     baseKey: CryptoKey,
     derivedKeyAlgorithm: {name: string, length: number},
     extractable: boolean,
-    keyUsages: string[]
+    keyUsages: string[],
+    authPromptTitle?: string,
+    authPromptMessage?: string
   ): Promise<void> {
     return new Promise((onSuccess, onError) => {
       if (typeof algorithm === 'string') {
@@ -87,6 +96,8 @@ export class _CryptoKey extends NativeObject {
           derivedKeyAlgorithm,
           extractable,
           keyUsages,
+          authPromptTitle,
+          authPromptMessage,
           onSuccess,
           onError: wrapErrorCb(onError)
         });
@@ -97,6 +108,8 @@ export class _CryptoKey extends NativeObject {
           derivedKeyAlgorithm,
           extractable,
           keyUsages,
+          authPromptTitle,
+          authPromptMessage,
           onSuccess,
           onError: wrapErrorCb(onError)
         });
@@ -107,15 +120,17 @@ export class _CryptoKey extends NativeObject {
   }
 
   async generate(
-    algorithm: AlgorithmECDH,
+    algorithm: AlgorithmECDH | AlgorithmECDSA,
     extractable: boolean,
-    keyUsages: string[]
+    keyUsages: string[],
+    usageRequiresAuth?: boolean
   ): Promise<void> {
     return new Promise((onSuccess, onError) =>
       this._nativeCall('generate', {
         algorithm,
         extractable,
         keyUsages,
+        usageRequiresAuth,
         onSuccess,
         onError: wrapErrorCb(onError)
       })

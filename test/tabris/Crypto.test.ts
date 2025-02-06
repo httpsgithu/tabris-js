@@ -319,7 +319,7 @@ describe('Crypto', function() {
     it('checks parameter length', async function() {
       params.pop();
       await expect(deriveKey())
-        .rejectedWith(TypeError, 'Expected 5 arguments, got 4');
+        .rejectedWith(TypeError, 'Expected at least 5 arguments, got 4');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
@@ -391,6 +391,20 @@ describe('Crypto', function() {
       await expect(deriveKey())
         .rejectedWith(TypeError, 'Expected derivedKeyAlgorithm.length to be a number, got string.');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptTitle', async function() {
+      params[5] = {authPromptTitle: null};
+      await expect(deriveKey())
+        .rejectedWith(TypeError, 'Expected options.authPromptTitle to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptMessage', async function() {
+      params[5] = {authPromptMessage: null};
+      await expect(deriveKey())
+        .rejectedWith(TypeError, 'Expected options.authPromptMessage to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
     });
 
   });
@@ -502,7 +516,7 @@ describe('Crypto', function() {
 
     it('checks parameter length', async function() {
       params.pop();
-      await expect(deriveBits()).rejectedWith(TypeError, 'Expected 3 arguments, got 2');
+      await expect(deriveBits()).rejectedWith(TypeError, 'Expected at least 3 arguments, got 2');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
@@ -524,6 +538,20 @@ describe('Crypto', function() {
       await expect(deriveBits())
         .rejectedWith(TypeError, 'Expected baseKey to be of type CryptoKey, got null.');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptTitle', async function() {
+      params[3] = {authPromptTitle: null};
+      await expect(deriveBits())
+        .rejectedWith(TypeError, 'Expected options.authPromptTitle to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptMessage', async function() {
+      params[3] = {authPromptMessage: null};
+      await expect(deriveBits())
+        .rejectedWith(TypeError, 'Expected options.authPromptMessage to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
     });
 
   });
@@ -647,7 +675,7 @@ describe('Crypto', function() {
     it('checks algorithm.name', async function() {
       (params[2] as any).name = 'foo';
       await expect(importKey())
-        .rejectedWith(TypeError, 'algorithm.name must be "ECDH" or "AES-GCM", got "foo"');
+        .rejectedWith(TypeError, 'algorithm.name must be "ECDH", "ECDSA" or "AES-GCM", got "foo"');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
@@ -659,6 +687,14 @@ describe('Crypto', function() {
     });
 
     it('checks algorithm keys for ECDH', async function() {
+      (params[2] as any).foo = 'foo';
+      await expect(importKey())
+        .rejectedWith(TypeError, 'Object contains unexpected entry "foo"');
+      expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
+    });
+
+    it('checks algorithm keys for ECDSA', async function() {
+      (params[2] as any).name = 'ECDSA';
       (params[2] as any).foo = 'foo';
       await expect(importKey())
         .rejectedWith(TypeError, 'Object contains unexpected entry "foo"');
@@ -1026,19 +1062,24 @@ describe('Crypto', function() {
     beforeEach(function() {
       client.resetCalls();
       params = [
-        {
-          name: 'ECDH',
-          namedCurve: 'P-256'
-        },
+        {name: 'ECDSA', namedCurve: 'P-256'},
         true,
-        ['foo', 'bar']
+        ['foo', 'bar'],
+        {usageRequiresAuth: false}
       ];
     });
 
     it('CREATEs CryptKey and CALLs generate', async function() {
       await generateKey(param => param.onSuccess());
       const id = client.calls({op: 'create', type: 'tabris.CryptoKey'})[0].id;
-      expect(client.calls({op: 'call', id, method: 'generate'}).length).to.equal(1);
+      const calls = client.calls({op: 'call', id, method: 'generate'});
+      expect(calls.length).to.equal(1);
+      expect(calls[0].parameters).to.deep.include({
+        algorithm: {name: 'ECDSA', namedCurve: 'P-256'},
+        extractable: true,
+        keyUsages: ['foo', 'bar'],
+        usageRequiresAuth: false
+      });
     });
 
     it('CREATEs public and private CryptKey', async function() {
@@ -1059,9 +1100,10 @@ describe('Crypto', function() {
     });
 
     it('checks parameter length', async function() {
-      params.pop();
+      params.pop(); // removes optional parameter `options`
+      params.pop(); // removes required parameter `usages`
       await expect(generateKey())
-        .rejectedWith(TypeError, 'Expected 3 arguments, got 2');
+        .rejectedWith(TypeError, 'Expected at least 3 arguments, got 2');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
@@ -1069,7 +1111,7 @@ describe('Crypto', function() {
       // @ts-ignore
       params[0].name = 'foo';
       await expect(generateKey())
-        .rejectedWith(TypeError, 'algorithm.name must be "ECDH", got "foo"');
+        .rejectedWith(TypeError, 'algorithm.name must be "ECDH" or "ECDSA", got "foo"');
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
@@ -1095,6 +1137,213 @@ describe('Crypto', function() {
       expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
     });
 
+    it('checks options.usageRequiresAuth type', async function() {
+      params[3] = {usageRequiresAuth: null};
+      await expect(generateKey())
+        .rejectedWith(TypeError, 'Expected options.usageRequiresAuth to be a boolean, got null');
+      expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
+    });
+
+    it('rejects options.usageRequiresAuth when key is extractable', async function() {
+      params[1] = true;
+      params[3] = {usageRequiresAuth: true};
+      await expect(generateKey())
+        .rejectedWith(TypeError, 'options.usageRequiresAuth is only supported for non-extractable EC keys');
+      expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.equal(0);
+    });
+
+    it('does not reject options.usageRequiresAuth for non-extractable EC keys', async function() {
+      (tabris as any).device.platform = 'Android';
+      params[1] = false;
+      params[3] = {usageRequiresAuth: true};
+      await generateKey(param => param.onSuccess());
+      expect(client.calls({op: 'create', type: 'tabris.CryptoKey'}).length).to.be.greaterThan(0);
+    });
+
+  });
+
+  describe('subtle.sign()', function() {
+    let params: Parameters<typeof crypto.subtle.sign>;
+    let data: ArrayBuffer;
+    let key: _CryptoKey;
+
+    async function sign(cb?: (nativeParams: any) => void) {
+      const promise = crypto.subtle.sign.apply(crypto.subtle, params);
+      cb?.call(null, client.calls({op: 'call', method: 'subtleSign'})[0].parameters);
+      return promise;
+    }
+
+    beforeEach(function() {
+      client.resetCalls();
+      data = new ArrayBuffer(10);
+      key = new _CryptoKey();
+      params = [
+        {name: 'ECDSAinDERFormat', hash: 'SHA-256'},
+        new CryptoKey(key, {}),
+        data
+      ];
+    });
+
+    it('CALLs subtleSign', async function() {
+      await sign(param => param.onSuccess());
+      const signCalls = client.calls({op: 'call', method: 'subtleSign'});
+      expect(signCalls.length).to.equal(1);
+      expect(signCalls[0].parameters).to.deep.include({
+        algorithm: {name: 'ECDSAinDERFormat', hash: 'SHA-256'},
+        key: key.cid,
+        data
+      });
+    });
+
+    it('returns signed data', async function() {
+      const signed = new ArrayBuffer(2);
+      expect(await sign(param => param.onSuccess(signed)))
+        .to.equal(signed);
+    });
+
+    it('propagates rejection', async function() {
+      await expect(sign(param => param.onError('signerror')))
+        .rejectedWith(Error, 'signerror');
+    });
+
+    it('checks parameter length', async function() {
+      params.pop();
+      await expect(sign())
+        .rejectedWith(TypeError, 'Expected at least 3 arguments, got 2');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks algorithm.name', async function() {
+      (params[0].name as any) = 'foo';
+      await expect(sign())
+        .rejectedWith(TypeError, 'algorithm.name must be "ECDSAinDERFormat", got "foo"');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks algorithm.hash', async function() {
+      (params[0].hash as any) = 'foo';
+      await expect(sign())
+        .rejectedWith(TypeError, 'algorithm.hash must be "SHA-256", got "foo"');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks key', async function() {
+      params[1] = null;
+      await expect(sign())
+        .rejectedWith(TypeError, 'Expected key to be of type CryptoKey, got null');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks data', async function() {
+      params[2] = null;
+      await expect(sign())
+        .rejectedWith(TypeError, 'Expected data to be of type ArrayBuffer, got null');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptTitle', async function() {
+      params[3] = {authPromptTitle: null};
+      await expect(sign())
+        .rejectedWith(TypeError, 'Expected options.authPromptTitle to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+    it('checks options.authPromptMessage', async function() {
+      params[3] = {authPromptMessage: null};
+      await expect(sign())
+        .rejectedWith(TypeError, 'Expected options.authPromptMessage to be a string, got null.');
+      expect(client.calls({op: 'call', method: 'subtleSign'}).length).to.equal(0);
+    });
+
+  });
+
+  describe('subtle.verify()', function() {
+    let params: Parameters<typeof crypto.subtle.verify>;
+    let signature: ArrayBuffer;
+    let data: ArrayBuffer;
+    let key: _CryptoKey;
+
+    async function verify(cb?: (nativeParams: any) => void) {
+      const promise = crypto.subtle.verify.apply(crypto.subtle, params);
+      cb?.call(null, client.calls({op: 'call', method: 'subtleVerify'})[0].parameters);
+      return promise;
+    }
+
+    beforeEach(function() {
+      client.resetCalls();
+      signature = new ArrayBuffer(2);
+      data = new ArrayBuffer(10);
+      key = new _CryptoKey();
+      params = [
+        {name: 'ECDSAinDERFormat', hash: 'SHA-256'},
+        new CryptoKey(key, {}),
+        signature,
+        data
+      ];
+    });
+
+    it('CALLs subtleVerify', async function() {
+      await verify(param => param.onSuccess(true));
+      const verifyCalls = client.calls({op: 'call', method: 'subtleVerify'});
+      expect(verifyCalls.length).to.equal(1);
+      expect(verifyCalls[0].parameters).to.deep.include({
+        algorithm: {name: 'ECDSAinDERFormat', hash: 'SHA-256'},
+        key: key.cid,
+        signature,
+        data
+      });
+    });
+
+    it('returns verification result', async function() {
+      expect(await verify(param => param.onSuccess(true))).to.be.true;
+    });
+
+    it('propagates rejection', async function() {
+      await expect(verify(param => param.onError('verifyerror')))
+        .rejectedWith(Error, 'verifyerror');
+    });
+
+    it('checks parameter length', async function() {
+      params.pop();
+      await expect(verify())
+        .rejectedWith(TypeError, 'Expected 4 arguments, got 3');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
+
+    it('checks algorithm.name', async function() {
+      (params[0].name as any) = 'foo';
+      await expect(verify())
+        .rejectedWith(TypeError, 'algorithm.name must be "ECDSAinDERFormat", got "foo"');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
+
+    it('checks algorithm.hash', async function() {
+      (params[0].hash as any) = 'foo';
+      await expect(verify())
+        .rejectedWith(TypeError, 'algorithm.hash must be "SHA-256", got "foo"');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
+
+    it('checks key', async function() {
+      params[1] = null;
+      await expect(verify())
+        .rejectedWith(TypeError, 'Expected key to be of type CryptoKey, got null');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
+
+    it('checks signature', async function() {
+      params[2] = null;
+      await expect(verify())
+        .rejectedWith(TypeError, 'Expected signature to be of type ArrayBuffer, got null');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
+
+    it('checks data', async function() {
+      params[3] = null;
+      await expect(verify())
+        .rejectedWith(TypeError, 'Expected data to be of type ArrayBuffer, got null');
+      expect(client.calls({op: 'call', method: 'subtleVerify'}).length).to.equal(0);
+    });
   });
 
 });
